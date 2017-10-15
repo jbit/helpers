@@ -104,7 +104,7 @@ VM_SETUP=(
 
     # Auto start on boot up (if machine is setup for this)
     # https://www.virtualbox.org/manual/ch09.html#autostart
-    --autostart on
+    --autostart-enabled on
 )
 
 gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys "630239CC130E1A7FD81A27B140976EAF437D05B5" "790BC7277767219C42C86F933B4FE6ACC0B21F32"
