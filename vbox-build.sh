@@ -8,7 +8,18 @@ HELP=(
     "  - Proceeds with automated ubuntu installation"
     ""
     "So after running this script you'll have a new VM with ubuntu installed :)"
+    ""
+    "Takes one argument which is the name of the virtual machine"
+    "Edit the script to configure the VM"
 )
+
+case "$1" in
+--help | -h)
+    printf '%s\n' "${HELP[@]}"
+    exit 1
+    ;;
+
+esac
 
 set -o nounset
 
@@ -25,21 +36,22 @@ VM_USER="$USER"
 VM_OS="Ubuntu_64"
 VM_PACKAGES=(
     openssh-server # Allow SSH access
-    avahi-daemon
-    virtualbox-guest-dkms  #
+    avahi-daemon # Make this system available by <name>.local
+    virtualbox-guest-dkms
     virtualbox-guest-utils
     build-essential # Allow building things :)
+    net-tools # Oldskool network tools (ifconfig, etc)
 )
 
 echo $VM_NAME
 
 MIRROR_PROTOCOL="http"
 MIRROR_HOSTNAME="ftp.iinet.net.au"
-MIRROR_DIRECTORY="/linux/ubuntu"
+MIRROR_DIRECTORY="/pub/ubuntu"
 MIRROR_URL="${MIRROR_PROTOCOL}://${MIRROR_HOSTNAME}/${MIRROR_DIRECTORY}"
 INSTALLER_FILE="netboot.tar.gz"
 INSTALLER_MIRROR_PATH="netboot/${INSTALLER_FILE}"
-INSTALLER_BASE_URL="${MIRROR_URL}/dists/xenial-updates/main/installer-amd64/current/images"
+INSTALLER_BASE_URL="${MIRROR_URL}/dists/bionic/main/installer-amd64/current/images"
 INSTALLER_URL="${INSTALLER_BASE_URL}/${INSTALLER_MIRROR_PATH}"
 INSTALLER_SHA256SUMS="${INSTALLER_BASE_URL}/SHA256SUMS"
 INSTALLER_KERNEL="ubuntu-installer/amd64/linux"
@@ -123,6 +135,15 @@ set -o errexit
 # Print all the lines as they're ran
 set -o xtrace
 
+# Download installer image and verification materials
+wget --no-verbose --continue "${INSTALLER_URL}" "${INSTALLER_SHA256SUMS}" "${INSTALLER_SHA256SUMS}.gpg"
+
+# Verify the checksum file is signed properly
+gpg --verify SHA256SUMS.gpg SHA256SUMS
+
+# Verify the netboot.tar.gz file is what it seems
+sed -n "s_\./${INSTALLER_MIRROR_PATH}_${INSTALLER_FILE}_p" SHA256SUMS | gsha256sum -c
+
 # Virtual machine creation
 VBoxManage createvm --name "${VM_NAME}" --ostype "${VM_OS}" --basefolder "${VM_ROOT}"
 VBoxManage registervm "${VM_PATH}/${VM_NAME}.vbox"
@@ -132,15 +153,6 @@ VBoxManage modifyvm "${VM_NAME}" ${VM_SETUP[@]}
 VBoxManage createmedium disk --filename "${VM_PATH}/OS.vdi" --size ${VM_DISK} --format VDI
 VBoxManage storagectl "${VM_NAME}" --name default --add sata --controller IntelAHCI --portcount 1 --bootable on
 VBoxManage storageattach "${VM_NAME}" --storagectl default --port 0 --device 0 --type hdd --medium "${VM_PATH}/OS.vdi" --nonrotational on --discard on
-
-# Download installer image and verification materials
-wget --no-verbose --continue "${INSTALLER_URL}" "${INSTALLER_SHA256SUMS}" "${INSTALLER_SHA256SUMS}.gpg"
-
-# Verify the checksum file is signed properly
-gpg --verify SHA256SUMS.gpg SHA256SUMS
-
-# Verify the netboot.tar.gz file is what it seems
-sed -n "s_\./${INSTALLER_MIRROR_PATH}_${INSTALLER_FILE}_p" SHA256SUMS | gsha256sum -c
 
 # Setup TFTP environment
 mkdir -p "${VM_TFTP_PATH}"
@@ -220,8 +232,8 @@ d-i debian-installer/add-kernel-opts string console=tty0 console=ttyS0,115200n8
 # Make sure user changes their password
 # Install the users ssh key
 d-i preseed/late_command string \
-    in-target /bin/sh -c "echo auto enp0s8 >> /etc/network/interfaces.d/enp0s8" && \
-    in-target /bin/sh -c "echo iface enp0s8 inet dhcp >> /etc/network/interfaces.d/enp0s8" && \
+    in-target /bin/sh -c "echo '    enp0s8:' >> /etc/netplan/01-netcfg.yaml" && \
+    in-target /bin/sh -c "echo '      dhcp4: yes' >> /etc/netplan/01-netcfg.yaml" && \
     in-target passwd -e ${VM_USER} && \
     in-target mkdir -p /home/${VM_USER}/.ssh && \
     in-target /bin/sh -c "echo ${VM_SSH_KEY} >> /home/${VM_USER}/.ssh/authorized_keys" && \
